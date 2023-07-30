@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "firefox",
+            "name": "JavaScript Debug Terminal",
+            "request": "launch",
+            "file": "${workspaceFolder}/${relativeFile}"
+        },
+        {
+            "name": "Launch localhost",
+            "type": "firefox",
+            "request": "launch",
+            "reAttach": true,
+            "url": "http://localhost/index.html",
+            "webRoot": "${workspaceFolder}"
+        },
+        {
+            "name": "Attach",
+            "type": "firefox",
+            "request": "attach"
+        },
+        {
+            "name": "Launch WebExtension",
+            "type": "firefox",
+            "request": "launch",
+            "reAttach": true,
+            "addonPath": "${workspaceFolder}"
+        }
+    ]
+}

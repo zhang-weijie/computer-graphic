@@ -1,0 +1,361 @@
+<html>
+
+<head>
+    <title>Tutorial for the course Computergrafik, part 1</title>
+    // This code is based on the examples in the book "Real-Time 3D Graphics with WebGL 2.0"
+    // from Farhad Ghayour and Diego Cantor, Packt Publishing, 2018
+    // Thomas Jung, 2023
+    <link rel="shortcut icon" type="image/png" href="../common/images/favicon.png" />
+
+    <!-- libraries -->
+    <link rel="stylesheet" href="../common/lib/normalize.css">
+
+    <!-- modules -->
+    <script type="text/javascript" src="../common/js/utils.js"></script>
+    <!-- Tutorial2 -->
+    <script type="text/javascript" src="../common/lib/gl-matrix.js"></script>
+    <script type="text/javascript" src="../common/js/EventEmitter.js"></script>
+    <script type="text/javascript" src="../common/js/Clock.js"></script>
+    <!-- added by Weijie -->
+    <script type="text/javascript" src="../common/js/Program.js"></script>
+    <!-- added by Weijie -->
+    <!-- Tutorial2 -->
+
+    // Browser doesn´t know this MIME type
+    <!-- vertex Shader -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+      #version 300 es
+      precision mediump float;
+  
+      // Supplied vertex position attribute
+      in vec3 aVertexPosition;
+        
+      //Tutorial3
+      in vec3 aColor;
+      out vec3 color;
+      //Tutorial3
+
+      //Tutorial2
+      uniform mat4 uModelViewMatrix;
+      uniform mat4 uProjectionMatrix;
+      //Tutorial2
+  
+      void main(void) {
+        // Set the position in clipspace coordinates
+        gl_Position = vec4(aVertexPosition, 1.0);
+
+        //Tutorial2
+        gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+        //Tutorial2
+
+        //Tutorial3
+        color = aColor;
+        //Tutorial3
+      }
+    </script>
+
+    <!-- fragment Shader -->
+    <script id="fragment-shader" type="x-shader/x-fragment">
+      #version 300 es
+      precision mediump float;
+
+      // Color that is the result of this shader
+      out vec4 fragColor;
+
+      //Tutorial3
+      in vec3 color;
+      //Tutorial3
+  
+      void main(void) {
+        //commented due to Tutorial3
+        // Set the result as red
+        //fragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        //commented due to Tutorial3
+
+        //Tutorial3
+        fragColor = vec4(color, 1);
+        //Tutorial3
+      }
+    </script>
+
+    <script type="text/javascript">
+        // For example, prohibit assignment to undeclared variables 
+        'use strict';
+
+
+        // Global variables that are set and used
+        // across the application
+        let gl,
+            program,
+            vertexBuffer,
+            indexBuffer,
+            indices;
+
+        // Create a program with the appropriate vertex and fragment shaders
+        function initProgram() {
+            // Compile shaders
+            const vertexShader = utils.getShader(gl, 'vertex-shader');
+            const fragmentShader = utils.getShader(gl, 'fragment-shader');
+
+            // Create a program
+            program = gl.createProgram();
+            // Attach the shaders to this program
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Could not initialize shaders');
+            }
+
+            // Use this program instance
+            gl.useProgram(program);
+            // We attach the location of these shader values to the program instance
+            // for easy access later in the code (currently not used) 
+            program.aVertexPosition = gl.getAttribLocation(program, 'aVertexPosition');
+        }
+
+        //Tutorial3
+        let colorBuffer;
+        //Tutorial3
+
+        //Tutorial2
+        let clock, modelViewMatrix, projectionMatrix;
+
+        modelViewMatrix = mat4.create();
+        projectionMatrix = mat4.create();
+
+        // Create a program with the appropriate vertex and fragment shaders
+        function initProgram() {
+            // Configure `program` using
+            program = new Program(gl, 'vertex-shader', 'fragment-shader');
+
+            const attributes = [
+                'aVertexPosition',
+                //Tutorial3
+                'aColor',
+                //Tutorial3
+            ];
+
+            const uniforms = [
+                'uProjectionMatrix',
+                'uModelViewMatrix',
+            ];
+
+            // Load attributes and uniforms into program
+            program.load(attributes, uniforms);
+        }
+        //Tutorial2
+
+
+        // If key is pressed change background color
+        function checkKey(event) {
+            switch (event.keyCode) {
+                // number 1 => green
+                case 49: {
+                    gl.clearColor(0.2, 0.8, 0.2, 1.0);
+                    break;
+                }
+                // number 2 => blue
+                case 50: {
+                    gl.clearColor(0.2, 0.2, 0.8, 1.0);
+                    break;
+                }
+                // number 3 => random color
+                case 51: {
+                    gl.clearColor(Math.random(), Math.random(), Math.random(), 1.0);
+                    break;
+                }
+            }
+
+            draw();
+        }
+
+        // Set up the buffers for the truncated pyramid
+        function initBuffers() {
+            /*
+            V4                         V7
+             X-------------------------X
+             |\                       /|
+             | X---------------------X |
+             | |V0                 V3| |
+             | |                     | |
+             | |       (0, 0)        | |
+             | |                     | |
+             | |V1                 V2| |
+             | X---------------------X |
+             |/                       \|
+             X-------------------------X
+            V5                         V6
+            */
+
+            //图形的8个顶点
+            //commented due to Tutorial3
+            /*             const vertices = [
+                            -0.5, 0.5, -0.5,
+                            -0.5, -0.5, -0.5,
+                            0.5, -0.5, -0.5,
+                            0.5, 0.5, -0.5,
+                            -0.6, 0.6, 0.5,
+                            -0.6, -0.6, 0.5,
+                            0.6, -0.6, 0.5,
+                            0.6, 0.6, 0.5
+                        ]; */
+            //commented due to Tutorial3
+
+            //Tutorial3
+            //  truncated pyramid -> cube
+            const vertices = [
+                -0.5, 0.5, -0.5,
+                -0.5, -0.5, -0.5,
+                0.5, -0.5, -0.5,
+                0.5, 0.5, -0.5,
+                -0.5, 0.5, 0.5,
+                -0.5, -0.5, 0.5,
+                0.5, -0.5, 0.5,
+                0.5, 0.5, 0.5
+            ];
+            //Tutorial3
+
+            // Indices for wire frame rendering
+            // 按顺序两两一对相连接。0-1, 1-2, 2-3, 3-0。
+            indices = [0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7];
+
+
+            //Tutorial3
+            // Indices for triangles
+            indices = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 1, 5, 0, 5, 4, 2, 7, 3, 2, 6, 7, 1, 2, 5, 2, 6, 5, 3, 4, 7, 3, 0, 4];
+            //Tutorial3
+
+            //Tutorial3
+            // Gouraud shading
+            const colors = [
+                0, 0, 0,
+                1, 0, 0,
+                1, 1, 0,
+                0, 1, 0,
+                0, 0, 1,
+                1, 0, 1,
+                1, 1, 1,
+                0, 1, 1
+            ];
+            //Tutorial3
+
+            // Setting up the VBO
+            vertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+            // Setting up the IBO
+            indexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+            //Tutorial3
+            colorBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+            //Tutorial3
+
+            // Clean
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        }
+
+        // We call draw to render to our canvas
+        function draw() {
+            // Clear the scene
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+            // Use the buffers we've constructed
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(program.aVertexPosition);
+
+            //Tutorial3
+            gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+            gl.vertexAttribPointer(program.aColor, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(program.aColor);
+            //Tutorial3
+
+            // Bind IBO
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+            //Tutorial2
+            mat4.perspective(projectionMatrix, 60.0 * Math.PI / 180, 4 / 3, 0.1, 100);
+            mat4.translate(projectionMatrix, projectionMatrix, [0, 0, -3.0]);
+            gl.uniformMatrix4fv(program.uProjectionMatrix, false, projectionMatrix);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, 0.25 * Math.PI / 180, [0, 1, 0]);
+            gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+            //Tutorial2
+
+            //commented due to Tutorial3
+            // Draw to the scene using triangle primitives
+            // gl.drawElements(gl.LINES, indices.length, gl.UNSIGNED_SHORT, 0);
+            //commented due to Tutorial3
+
+            //Tutorial3
+            gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+            //Tutorial3
+
+            // Clean
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        }
+
+        // Entry point to our application
+        function init() {
+            // Retrieve the canvas
+            const canvas = utils.getCanvas('webgl-canvas');
+
+            // Set the canvas to the size of the screen
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // Retrieve a WebGL context
+            gl = utils.getGLContext(canvas);
+            // Set the clear color to be black, first opengl call here
+            gl.clearColor(0, 0, 0, 1);
+
+            // Call the functions in an appropriate order
+            initProgram();
+            initBuffers();
+            draw();
+
+            //Tutorial2
+            clock = new Clock();
+            // "tick" calls requestAnimationFrame while window has focus
+            clock.on('tick', draw);
+            //Tutorial2
+        }
+
+        // Call checkKey whenever a key is pressed
+        window.onkeydown = checkKey;
+
+        // Call init once the webpage has loaded
+        window.onload = init;
+    </script>
+</head>
+
+<body>
+
+    <canvas id="webgl-canvas">
+        Your browser does not support the HTML5 canvas element.
+    </canvas>
+
+</body>
+
+</html>
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,534 @@
+<!--solar system by Weijie Zhang -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<title>three.js webgl - animation - groups</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link type="text/css" rel="stylesheet" href="main.css">
+</head>
+
+<body>
+	<!-- Import maps polyfill -->
+	<!-- Remove this when import maps will be widely supported -->
+	<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+	<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "../examples/jsm/"
+				}
+			}
+	</script>
+
+	<script type="module">
+
+		import * as THREE from 'three';
+
+		import Stats from 'three/addons/libs/stats.module.js';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+		let gui;
+
+		let scene, camera, controls, renderer;
+
+		let timer = 0;
+		let animationSpeed = { speed: 5 };
+		let dateData = {
+			month: 3,
+			day: 21
+		};
+		let monthControl, dateControl;
+
+		let perspectiveCamera, orthographicCamera;
+		let cameraType = { type: 'Perspective' };
+		let usingEarthPerspective = false;
+		let earthPerspectiveCoords = { longitude: 13.4, latitude: 52.5 };
+
+		let sunMaterial;
+		let planets, planetData, orbits, planetAxises, equatorPlanes, subsolarLines, planetNameTexts, sunMesh, earthMesh, orbit;
+		let showOrbitPlane = { orbit_plane: false };
+		let showRotationAxis = { rotation_axis: false };
+		let showSubsolarLine = { direct_sunlight: false };
+
+		let moveControlToggle;
+		let moveControl = {
+			paused: false,
+			lastTimeStamp: 0,
+			delay: 0,
+			togglePause: function () {
+				this.paused = !this.paused;
+				updateMoveControlToggle();
+				if (this.paused) {
+					this.delay = 0;
+					this.lastTimeStamp = Date.now();
+				} else {
+					this.delay = Date.now() - this.lastTimeStamp;
+					this.lastTimeStamp = 0;
+					animate();
+				}
+			}
+		};;
+
+		let selectedObject = null;
+		let raycaster = new THREE.Raycaster();
+		let mouse = new THREE.Vector2();
+
+		init();
+		animate();
+
+		function init() {
+
+			// create scene, camera and renderer
+			scene = new THREE.Scene();
+
+			initCameras();
+			camera = perspectiveCamera;
+
+			renderer = new THREE.WebGLRenderer({ antialias: true });
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.body.appendChild(renderer.domElement);
+
+			// sun
+			initSun();
+
+			// planets
+			initPlanets();
+
+			// stars
+			initStars();
+
+			// lights
+			initLights();
+
+			// controls
+			initControls();
+
+			// GUI
+			initGUI();
+
+			window.addEventListener('resize', onWindowResize);
+
+			window.addEventListener('mousedown', onMouseDown, false);
+		}
+
+		// referring to https://sbcode.net/threejs/dat-gui/, implemented by Weijie
+		function initGUI() {
+			gui = new GUI();
+
+			const dateFolder = gui.addFolder('Date');
+			// try to adjust the positions of the planets according to a given Date, without success
+			monthControl = dateFolder.add(dateData, 'month', 1, 12, 1).name('Month').onChange(function () {
+				// if (moveControl.paused) {
+				// 	timer = -((dateData.month - 1) * 30 * (360 / (1 * 1000) * animationSpeed.speed / 5) + (dateData.day - 1) * (360 / (1 * 1000) * animationSpeed.speed / 5));
+				// 	console.log('month: '+ timer);
+				// }
+			});
+			dateControl = dateFolder.add(dateData, 'day', 1, 30, 1).name('Day').onChange(function () {
+				// if (moveControl.paused) {
+				// 	timer = -((dateData.month - 1) * 30 * (360 / (1 * 1000) * animationSpeed.speed / 5) + (dateData.day - 1) * (360 / (1 * 1000) * animationSpeed.speed / 5));
+				// 	console.log('day: '+ timer);
+				// }
+			});
+			moveControlToggle = dateFolder.add(moveControl, 'togglePause').name('pause');
+
+
+			const sceneFolder = gui.addFolder('Scene');
+			sceneFolder.add(animationSpeed, 'speed', 1, 10);
+
+			const cameraFolder = gui.addFolder('Camera');
+			let latitudeControl = cameraFolder.add(earthPerspectiveCoords, 'latitude', -90, 90);
+			latitudeControl.domElement.style.display = 'none';
+			cameraFolder.add(cameraType, 'type', ['Orthographic', 'Perspective', 'Earth Perspective']).onChange(function (value) {
+				if (value === 'Orthographic') {
+					latitudeControl.domElement.style.display = 'none';
+					camera = orthographicCamera;
+					camera.position.set(100, 50, 0);
+					camera.lookAt(scene.position);
+					usingEarthPerspective = false;
+				} else if (value === 'Perspective') {
+					latitudeControl.domElement.style.display = 'none';
+					camera = perspectiveCamera;
+					camera.position.set(100, 50, 0);
+					camera.lookAt(scene.position);
+					usingEarthPerspective = false;
+				} else if (value === 'Earth Perspective') {
+					latitudeControl.domElement.style.display = 'block';
+					camera = perspectiveCamera;
+					usingEarthPerspective = true;
+				}
+			});
+
+			const planetFolder = gui.addFolder('Planet');
+			planetFolder.add(showRotationAxis, 'rotation_axis', false, true);
+			planetFolder.add(showSubsolarLine, 'direct_sunlight', false, true);
+			planetFolder.add(showOrbitPlane, 'orbit_plane', false, true);
+		}
+
+		function updateMoveControlToggle() {
+			if (moveControl.paused) {
+				moveControlToggle.name('resume');
+			} else {
+				moveControlToggle.name('pause');
+			}
+		}
+
+		function initCameras() {
+			perspectiveCamera = new THREE.PerspectiveCamera(
+				40,
+				window.innerWidth / window.innerHeight,
+				1,
+				1000
+			);
+			perspectiveCamera.position.set(100, 50, 0);
+			perspectiveCamera.lookAt(scene.position);
+
+			orthographicCamera = new THREE.OrthographicCamera(
+				window.innerWidth / -12,
+				window.innerWidth / 12,
+				window.innerHeight / 12,
+				window.innerHeight / -12,
+				1,
+				1000
+			);
+			orthographicCamera.position.set(100, 50, 0);
+			orthographicCamera.lookAt(scene.position);
+		}
+
+		function initControls() {
+			// create controls
+			controls = new OrbitControls(camera, renderer.domElement);
+			controls.enableDamping = true;
+			controls.dampingFactor = 0.05;
+		}
+
+		function initSun() {
+			// create the sun sphere
+			let sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+			let sunTexture = new THREE.TextureLoader().load('texture/2k_sun.jpg');
+			sunMaterial = new THREE.MeshBasicMaterial({ map: sunTexture });
+			sunMesh = new THREE.Mesh(sunGeometry, sunMaterial);
+
+			scene.add(sunMesh);
+		}
+
+		// Planetary parameters given by ChatGPT, adjusted by Weijie to show a better animation effect
+		function initPlanets() {
+			// create the planets
+			planets = [];
+			planetAxises = [];
+			equatorPlanes = [];
+			subsolarLines = [];
+			orbits = [];
+
+			// Planetary parameters (radius, orbital radius, rotation speed, revolution speed)
+			planetData = [
+				{ name: 'Mercury', radius: 0.5, orbitRadius: 12, rotationSpeed: 0.1, revolutionSpeed: 0.003, inclination: 0.03, color: 0x0000ff },
+				{ name: 'Venus', radius: 0.7, orbitRadius: 16, rotationSpeed: 0.08, revolutionSpeed: 0.002, inclination: 2.64, color: 0x00ff00 },
+				{ name: 'Earth', radius: 1, orbitRadius: 20, rotationSpeed: 0.1, revolutionSpeed: 0.0015, inclination: 23.44, color: 0x00ffff },
+				{ name: 'Mars', radius: 0.8, orbitRadius: 24, rotationSpeed: 0.1, revolutionSpeed: 0.0012, inclination: 25.19, color: 0xff0000 },
+				{ name: 'Jupiter', radius: 2, orbitRadius: 30, rotationSpeed: 0.05, revolutionSpeed: 0.0009, inclination: 3.13, color: 0xff00ff },
+				{ name: 'Saturn', radius: 1.8, orbitRadius: 36, rotationSpeed: 0.04, revolutionSpeed: 0.0007, inclination: 26.73, color: 0xffff00 },
+				{ name: 'Uranus', radius: 1.3, orbitRadius: 42, rotationSpeed: 0.03, revolutionSpeed: 0.0005, inclination: 97.77, color: 0xffffff },
+				{ name: 'Neptune', radius: 1.2, orbitRadius: 48, rotationSpeed: 0.02, revolutionSpeed: 0.0003, inclination: 28.32, color: 0xf0ffff },
+			];
+
+			// Create the planet and add it to the scene
+			for (let i = 0; i < planetData.length; i++) {
+				let planet = planetData[i];
+				let planetGeometry = new THREE.SphereGeometry(planet.radius, 32, 32);
+				let planetTexture = new THREE.TextureLoader().load(`texture/2k_${planet.name.toLowerCase()}.jpg`);
+				let planetMaterial = new THREE.MeshPhongMaterial({ map: planetTexture });
+				// let planetMaterial = new THREE.MeshPhongMaterial({ transparent: true, color: planet.color });
+				let planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+				planetMesh.name = planet.name;
+
+				// Create planetary orbits
+				let orbitRadius = planet.orbitRadius;
+				let orbitPoints = 100;
+				let orbitGeometry = new THREE.CircleGeometry(orbitRadius, orbitPoints);
+				let orbitMaterial = new THREE.MeshBasicMaterial({ transparent: true, color: 0x222222 }); // 设置轨道线的颜色
+				let orbit = new THREE.Line(orbitGeometry, orbitMaterial);
+
+				// Set the position of planets and orbits
+				planetMesh.position.set(orbitRadius, 0, 0);
+				planetMesh.rotation.y = Math.PI;
+				orbit.rotation.x = Math.PI / 2;
+				orbit.visible = showOrbitPlane.orbit_plane;
+
+				scene.add(orbit);
+				orbits.push(orbit);
+				scene.add(planetMesh);
+				planets.push(planetMesh);
+
+
+				// adjust the rotation axis with inclination
+				// Convert degrees to radians
+				let inclinationAngle = THREE.MathUtils.degToRad(planet.inclination);
+				// Create Euler angles with the inclination angle
+				let inclinationEuler = new THREE.Euler(inclinationAngle, 0, 0, 'XYZ');
+				// Apply the inclination angle to the planet's rotation
+				planetMesh.rotation.setFromVector3(inclinationEuler);
+
+				// Create the axis line for planet's rotation
+				let axisGeometry = new THREE.BufferGeometry().setFromPoints([
+					new THREE.Vector3(0, -planet.radius * 2, 0),
+					new THREE.Vector3(0, planet.radius * 2, 0),
+				]);
+
+				// Get the array of vertices
+				let positions = axisGeometry.getAttribute('position').array;
+
+				// Apply the planet's inclination angle to the vertex coordinates
+				for (let i = 0; i < positions.length; i += 3) {
+					let y = positions[i + 1];
+					let z = positions[i + 2];
+					positions[i + 1] = y * Math.cos(inclinationAngle) - z * Math.sin(inclinationAngle);
+					positions[i + 2] = y * Math.sin(inclinationAngle) + z * Math.cos(inclinationAngle);
+				}
+
+				// Update the vertex positions
+				axisGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+				let axisMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+				let axisLine = new THREE.Line(axisGeometry, axisMaterial);
+				//axisLine invisible by default
+				axisLine.visible = showRotationAxis.rotation_axis;
+				axisLine.name = planet.name;
+				scene.add(axisLine);
+				planetAxises.push(axisLine);
+
+				// Create planetary orbits
+				let equatorRadius = planet.radius * 2;
+				let equatorPoints = 100;
+				let equatorGeometry = new THREE.CircleGeometry(equatorRadius, equatorPoints);
+				let equatorMaterial = new THREE.MeshBasicMaterial({ transparent: true, color: 0x222222 }); // 设置轨道线的颜色
+				let equatorPlane = new THREE.Line(equatorGeometry, equatorMaterial);
+				equatorPlane.rotation.x = planetMesh.rotation.x;
+				// Convert degrees to radians
+				// Create Euler angles with the inclination angle
+				let inclinationEuler2 = new THREE.Euler(Math.PI / 2 + inclinationAngle, 0, 0, 'XYZ');
+				equatorPlane.rotation.setFromVector3(inclinationEuler2);
+				equatorPlane.position.copy(planetMesh.position);
+
+				equatorPlane.visible = showRotationAxis.rotation_axis;
+				equatorPlane.name = planet.name;
+				scene.add(equatorPlane);
+				equatorPlanes.push(equatorPlane);
+
+				// Create a line geometry using the planet's position and the surface point
+				let lineGeometry = new THREE.BufferGeometry().setFromPoints([sunMesh.position, planetMesh.position]);
+				let lineMaterial;
+				// for earth we have a red line for direct sunlight
+				if (planet.name === 'Earth') {
+					lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+				} else {
+					lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+				}
+				let lineMesh = new THREE.Line(lineGeometry, lineMaterial);
+
+				// Add the line mesh to the scene
+				// lineMesh invisible by default
+				lineMesh.visible = showSubsolarLine.direct_sunlight;
+				scene.add(lineMesh);
+				subsolarLines.push(lineMesh);
+			}
+		}
+
+		// original implementation in https://threejs.org/examples/#webgl_camera, code refactored by Weijie
+		function initStars() {
+			// stars
+
+			const r = 6.371, starsGeometry = [new THREE.BufferGeometry(), new THREE.BufferGeometry()];
+
+			const vertices1 = [];
+			const vertices2 = [];
+
+			const vertex = new THREE.Vector3();
+
+			for (let i = 0; i < 250; i++) {
+
+				vertex.x = Math.random() * 2 - 1;
+				vertex.y = Math.random() * 2 - 1;
+				vertex.z = Math.random() * 2 - 1;
+				vertex.multiplyScalar(r);
+
+				vertices1.push(vertex.x, vertex.y, vertex.z);
+
+			}
+
+			for (let i = 0; i < 1500; i++) {
+
+				vertex.x = Math.random() * 2 - 1;
+				vertex.y = Math.random() * 2 - 1;
+				vertex.z = Math.random() * 2 - 1;
+				vertex.multiplyScalar(r);
+
+				vertices2.push(vertex.x, vertex.y, vertex.z);
+
+			}
+
+			starsGeometry[0].setAttribute('position', new THREE.Float32BufferAttribute(vertices1, 3));
+			starsGeometry[1].setAttribute('position', new THREE.Float32BufferAttribute(vertices2, 3));
+
+			const starsMaterials = [
+				new THREE.PointsMaterial({ color: 0x9c9c9c, size: 2, sizeAttenuation: false }),
+				new THREE.PointsMaterial({ color: 0x9c9c9c, size: 1, sizeAttenuation: false }),
+				new THREE.PointsMaterial({ color: 0x7c7c7c, size: 2, sizeAttenuation: false }),
+				new THREE.PointsMaterial({ color: 0x838383, size: 1, sizeAttenuation: false }),
+				new THREE.PointsMaterial({ color: 0x5a5a5a, size: 2, sizeAttenuation: false }),
+				new THREE.PointsMaterial({ color: 0x5a5a5a, size: 1, sizeAttenuation: false })
+			];
+
+			for (let i = 10; i < 30; i++) {
+
+				const stars = new THREE.Points(starsGeometry[i % 2], starsMaterials[i % 6]);
+
+				stars.rotation.x = Math.random() * 6;
+				stars.rotation.y = Math.random() * 6;
+				stars.rotation.z = Math.random() * 6;
+				stars.scale.setScalar(i * 10);
+
+				stars.matrixAutoUpdate = false;
+				stars.updateMatrix();
+
+				scene.add(stars);
+			}
+		}
+
+		function initLights() {
+			const posLight1 = new THREE.PointLight(0xffffff, 1);
+			posLight1.position.set(0, 0, 0);
+			scene.add(posLight1);
+
+			const ambientLight = new THREE.AmbientLight(0x222222);
+			scene.add(ambientLight);
+		}
+
+		function onWindowResize() {
+
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			controls.update();
+		}
+
+		function animate() {
+			if (!moveControl.paused) {
+				// update timer
+				timer -= 360 / (1 * 1000) * animationSpeed.speed / 5;
+				console.log('timer: ' + timer);
+				// create a mapping between timer and the real date
+				dateData.month = (parseInt(-timer / 30) + 2) % 12 + 1;
+				dateData.day = Math.floor((-timer + 20) % 30 + 1);
+				monthControl.setValue(dateData.month);
+				dateControl.setValue(dateData.day);
+
+				// ignore the rotation of sun
+				// sunMesh.rotation.y += 0.001;
+
+				// Planetary rotation and revolution
+				for (let i = 0; i < planets.length; i++) {
+					let planet = planetData[i];
+					let planetMesh = planets[i];
+
+					planetMesh.rotation.y += planet.rotationSpeed; // rotation
+					planetMesh.position.x = planet.orbitRadius * Math.cos(THREE.MathUtils.degToRad(timer) * planet.revolutionSpeed / planetData[2].revolutionSpeed);
+					planetMesh.position.z = planet.orbitRadius * Math.sin(THREE.MathUtils.degToRad(timer) * planet.revolutionSpeed / planetData[2].revolutionSpeed);
+
+					planetAxises[i].position.copy(planetMesh.position);
+					planetAxises[i].visible = showRotationAxis.rotation_axis;
+					equatorPlanes[i].position.copy(planetMesh.position);
+					equatorPlanes[i].visible = showRotationAxis.rotation_axis;
+
+					orbits[i].visible = showOrbitPlane.orbit_plane;
+
+					// Get the array of vertices
+					let lineGeometry = subsolarLines[i].geometry;
+					let positions = lineGeometry.getAttribute('position').array;
+					positions[3] = planetMesh.position.x;
+					positions[4] = planetMesh.position.y;
+					positions[5] = planetMesh.position.z;
+					// Update the vertex positions
+					lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+					subsolarLines[i].visible = showSubsolarLine.direct_sunlight;
+
+					if (usingEarthPerspective && planet.name === 'Earth') {
+						// perspectiveCamera.position.copy(planetMesh.position);
+
+						let latitude = earthPerspectiveCoords.latitude * (Math.PI / 180);
+						// earthPerspectiveCoords.longitude -= planet.rotationSpeed;
+						console.log(earthPerspectiveCoords.longitude);
+						let longitude = earthPerspectiveCoords.longitude * (Math.PI / 180);
+						//adjust camera position according to latitude and longitude
+						perspectiveCamera.position.x = planetMesh.position.x + (-planet.radius * Math.cos(latitude) * Math.sin(longitude));
+						perspectiveCamera.position.y = planetMesh.position.y + (planet.radius * Math.sin(latitude) + 0.1);
+						perspectiveCamera.position.z = planetMesh.position.z + (planet.radius * Math.cos(latitude) * Math.cos(longitude));
+					}
+				}
+			}
+			requestAnimationFrame(animate);
+			// only required if controls.enableDamping = true, or if controls.autoRotate = true
+			controls.update();
+
+			render();
+		}
+
+		function render() {
+
+			renderer.render(scene, camera);
+
+		}
+
+		// Use Raycaster Mouse Picking to enable scene change
+		// referring to https://sbcode.net/threejs/mousepick/, implemented by Weijie
+		function onMouseDown(event) {
+			// Calculate the normalized device coordinates of the mouse click position
+			mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+			mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+			// Update the origin of the raycaster
+			raycaster.setFromCamera(mouse, camera);
+
+			// Calculate the intersection between the ray and objects in the scene
+			let intersects = raycaster.intersectObjects(scene.children);
+
+			// If there is an intersection, select the first intersected object
+			if (intersects.length > 0) {
+				// Reset the style of the previously selected object
+				if (selectedObject) {
+					// Reset the style of the previously selected object to its original style
+				}
+
+				// Select the new object
+				selectedObject = intersects[0].object;
+
+				// Modify the style of the selected object
+				if (selectedObject.name === 'Earth') {
+					// Response area to mouse click is too large when using earth perspective camera, 
+					// therefore deactivate object selection when using earth perspective camera
+					if (!usingEarthPerspective){
+						window.open('./earth_moon.html');
+					}
+				}
+
+			} else {
+				// If no object is selected, reset the style of the previously selected object
+				if (selectedObject) {
+					// Reset the style of the previously selected object to its original style
+					selectedObject = null;
+				}
+			}
+		}
+
+
+	</script>
+
+</body>
+
+</html>

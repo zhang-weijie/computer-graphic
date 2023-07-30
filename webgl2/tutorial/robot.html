@@ -1,0 +1,432 @@
+<html>
+
+<head>
+    <title>Tutorial for the course Computergrafik, part 1</title>
+    // This code is based on the examples in the book "Real-Time 3D Graphics with WebGL 2.0"
+    // from Farhad Ghayour and Diego Cantor, Packt Publishing, 2018
+    // Thomas Jung, 2023
+    <link rel="shortcut icon" type="image/png" href="../common/images/favicon.png" />
+
+    <!-- libraries -->
+    <link rel="stylesheet" href="../common/lib/normalize.css">
+
+    <!-- modules -->
+    <script type="text/javascript" src="../common/js/utils.js"></script>
+    <script type="text/javascript" src="../common/lib/gl-matrix.js"></script>
+    <script type="text/javascript" src="../common/js/EventEmitter.js"></script>
+    <script type="text/javascript" src="../common/js/Clock.js"></script>
+    <script type="text/javascript" src="../common/js/Program.js"></script>
+    <script type="text/javascript" src="teapot.js"></script>
+    <script type="text/javascript" src="sphere.js"></script>
+
+
+    // Browser doesn´t know this MIME type
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        #version 300 es
+        precision mediump float;
+    
+        const int numLights = 2;
+    
+        uniform mat4 uModelViewMatrix;
+        uniform mat4 uProjectionMatrix;
+        // We need a normal matrix, which is the transposed inverted
+        uniform mat4 uNormalMatrix;
+        uniform vec3 uLightPosition[numLights];
+    
+        in vec3 aVertexPosition;
+        // new Tutorial 7: normal, not color
+        in vec3 aNormal;
+        in vec2 aTexCoord;
+    
+        out vec3 vNormal;
+        out vec3 vLightRay[numLights];
+        out vec3 vEye[numLights];
+        out vec2 vUV;
+
+    
+        void main(void) {
+          vec4 vertex = uModelViewMatrix * vec4(aVertexPosition, 1.0);
+          vec4 lightPosition = vec4(0.0);
+    
+          // Set varyings for each individual light
+          for(int i= 0; i < numLights; i++) {
+            lightPosition = vec4(uLightPosition[i], 1.0);
+            vLightRay[i] = vertex.xyz - lightPosition.xyz;
+            vEye[i] = -vec3(vertex.xyz);
+          }
+    
+          vNormal = vec3(uNormalMatrix * vec4(aNormal, 1.0));
+          vUV = aTexCoord;
+          gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+        }
+      </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        #version 300 es
+        precision mediump float;
+    
+        const int numLights = 2;
+    
+        uniform vec3 uLd[numLights];
+        uniform vec3 uLs[numLights];
+        uniform vec3 uLightPosition[numLights];
+        uniform vec3 uKa;
+        uniform vec3 uKd;
+        uniform vec3 uKs;
+        uniform float uNs;
+        uniform sampler2D uSampler;
+    
+        // from rasterizer
+        in vec3 vNormal;
+        in vec3 vLightRay[numLights];
+        in vec3 vEye[numLights];
+        in vec2 vUV;
+    
+        // to frame buffer
+        out vec4 fragColor;
+    
+        void main(void) {
+          vec3 color = vec3(0.0);
+          vec3 light = vec3(0.0);
+          vec3 eye = vec3(0.0);
+          vec3 reflection = vec3(0.0);
+          vec3 normal = normalize(vNormal);
+
+          for (int i = 0; i < numLights; i++) {
+              eye = normalize(vEye[i]);
+              light = normalize(vLightRay[i]);
+              reflection = reflect(light, normal);
+              color += (uLd[i] * texture(uSampler, vUV).rgb * clamp(dot(normal, -light), 0.0, 1.0));
+              color += (uLd[i] * uKd * clamp(dot(normal, -light), 0.0, 1.0));
+              color += (uLs[i] * uKs * pow(max(dot(reflection, eye), 0.0), uNs) * 4.0);
+          }
+    
+          fragColor =  vec4(color, 1.0);
+        }
+      </script>
+
+    <script type="text/javascript">
+        // For example, prohibit assignment to undeclared variables 
+        'use strict';
+
+        let gl,
+            program,
+            vertexBuffer,
+            indexBuffer,
+            indices;
+
+        let colorBuffer;
+
+        let normalMatrix;
+        normalMatrix = mat4.create();
+        function addNormalMatrix() {
+            mat4.copy(normalMatrix, modelViewMatrix);
+            mat4.invert(normalMatrix, normalMatrix);
+            mat4.transpose(normalMatrix, normalMatrix);
+            gl.uniformMatrix4fv(program.uNormalMatrix, false, normalMatrix);
+        }
+
+        let clock, modelViewMatrix, projectionMatrix;
+
+        modelViewMatrix = mat4.create();
+        projectionMatrix = mat4.create();
+
+        // Create a program with the appropriate vertex and fragment shaders
+        function initProgram() {
+            // Configure `program` using
+            program = new Program(gl, 'vertex-shader', 'fragment-shader');
+
+            const attributes = [
+                'aVertexPosition',
+
+                'aNormal',
+
+                'aTexCoord',
+            ];
+
+            const uniforms = [
+                'uLd',
+                'uLs',
+                'uLightPosition',
+                'uKa',
+                'uKd',
+                'uKs',
+                'uNs',
+                'uSampler',
+
+                'uProjectionMatrix',
+                'uModelViewMatrix',
+                'uNormalMatrix',
+            ];
+
+            // Load attributes and uniforms into program
+            program.load(attributes, uniforms);
+
+            // gl.uniform3fv(program.uLightPosition, [-5, 2, 2, 5, 2, 2]);
+            // gl.uniform3fv(program.uLightPosition, [lpos[0], lpos[1], lpos[2], 0, 0, 0]);
+            // gl.uniform3fv(program.uLd, [1, 0.1, 0.1, 0.1, 1, 0.1]);
+            gl.uniform3fv(program.uLd, [1, 1, 1, 0, 0, 0]); // only light one
+            gl.uniform3fv(program.uLs, [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+            gl.uniform3fv(program.uKa, [0.1, 0.1, 0.1]);
+            gl.uniform3fv(program.uKd, [0.4, 0.4, 0.4]);
+            // gl.uniform3fv(program.uKs, [0.4, 0.4, 0.4]);
+            gl.uniform3fv(program.uKs, [0.0, 0.0, 0.0]); // no specular reflection
+
+            gl.uniform1f(program.uNs, 10);
+            gl.uniform1i(program.uSampler, 0);
+
+
+            texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 4, 4, 0, gl.RGB, gl.UNSIGNED_BYTE, // checker board
+                new Uint8Array([
+                    255, 255, 255, 128, 128, 128, 255, 255, 255, 128, 128, 128,
+                    128, 128, 128, 255, 255, 255, 128, 128, 128, 255, 255, 255,
+                    255, 255, 255, 128, 128, 128, 255, 255, 255, 128, 128, 128,
+                    128, 128, 128, 255, 255, 255, 128, 128, 128, 255, 255, 255,
+                ]));
+
+            // set the filtering so we don't need mips and it's not filtered
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        }
+
+        let angleX = 0, angleY = 0, angleZ = 0;
+        let teapot;
+
+        let sphere;
+
+        let texture;
+
+        let angle1Y = 0, angle1Z = 0, angle2Z = 0, angle3Z = 0;
+        let h1 = 1.5;
+        let h2 = 1.2;
+        let h3 = 0.9;
+        // vec4.transformMat4(lpos, lpos, modelViewMatrix);
+
+        // If key is pressed change background color
+        function checkKey(event) {
+            switch (event.keyCode) {
+                // number 1 => green
+                case 49: {
+                    gl.clearColor(0.2, 0.8, 0.2, 1.0);
+                    break;
+                }
+                // number 2 => blue
+                case 50: {
+                    gl.clearColor(0.2, 0.2, 0.8, 1.0);
+                    break;
+                }
+                // number 3 => random color
+                case 51: {
+                    gl.clearColor(Math.random(), Math.random(), Math.random(), 1.0);
+                    break;
+                }
+                //Tutorial4
+                case 88 /*"KeyX"*/: {
+                    angleX += 0.3;
+                    break;
+                }
+
+                case 89 /*"KeyY"*/: {
+                    angleY += 0.3;
+                    break;
+                }
+
+                case 90 /*"KeyZ"*/: {
+                    angleZ += 0.3;
+                    break;
+                }
+                //Tutorial4
+
+                // QWER for robot
+                case 81 /*"KeyQ"*/: {
+                    angle1Y += 0.1;
+                    break;
+                }
+
+                case 87 /*"KeyW"*/: {
+                    angle1Z += 0.1;
+                    break;
+                }
+
+                case 69 /*"KeyE"*/: {
+                    angle2Z += 0.2;
+                    break;
+                }
+
+                case 82 /*"KeyR"*/: {
+                    angle3Z += 0.2;
+                    break;
+                }
+            }
+
+            //gl.clear() moved here, otherwise the canvas would be reset when we call cube.draw() the second time
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.clearColor(0, 0, 0, 1);
+            gl.enable(gl.DEPTH_TEST);
+
+            mat4.perspective(projectionMatrix, 60.0 * Math.PI / 180, 4 / 3, 0.1, 100);
+            mat4.translate(projectionMatrix, projectionMatrix, [0, 0, -3.0]);
+            gl.uniformMatrix4fv(program.uProjectionMatrix, false, projectionMatrix);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, -Math.PI / 2, [1, 0, 0]);
+            gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+
+            // //  Euler angles
+            mat4.identity(modelViewMatrix); // start from begin in every frame
+            // mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -3.0]); // now with modelview
+            mat4.rotate(modelViewMatrix, modelViewMatrix, angleX, [1, 0, 0]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, angleY, [0, 1, 0]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, angleZ, [0, 0, 1]);
+            //uncommented due to Tutorial6: otherwise the cube would be embedded in the sphere
+            //commented due to Tutorial5: with this there will be only one cube
+            gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+
+            sphere = new Sphere();
+            pushTrafo(modelViewMatrix);
+
+            mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, 1]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, angle1Y, [0, 0, 1]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, angle1Z, [0, 1, 0]);
+            syncTrafos();
+            drawSeg();
+
+            mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, 1]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, angle2Z, [0, 1, 0]);
+            syncTrafos();
+            drawSeg();
+
+            mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, 1]);
+            mat4.rotate(modelViewMatrix, modelViewMatrix, angle3Z, [0, 1, 0]);
+            syncTrafos();
+            drawSeg();
+            mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, 1]);
+
+            drawCS();
+
+            let lpos = vec4.create();
+            lpos[3] = 1.0;
+            vec4.transformMat4(lpos, lpos, modelViewMatrix);
+            gl.uniform3fv(program.uLightPosition, [lpos[0], lpos[1], lpos[2], 0, 0, 0]);
+
+            modelViewMatrix = popTrafo();
+
+            mat4.translate(modelViewMatrix, modelViewMatrix, [1.0, 0.0, 0.5]);
+            mat4.scale(modelViewMatrix, modelViewMatrix, [0.001, 0.001, 0.0015]);
+            syncTrafos();
+            // Set our sampler to user Texture Unit 0
+            // bind to Texture Unit 0
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.uniform1i(program.uSampler, 0);
+            teapot = new Teapot();
+            teapot.draw();
+        }
+
+        function syncTrafos() {
+            gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+            addNormalMatrix();
+        }
+
+        var trafos = [];
+
+        function pushTrafo(matrix) {
+            let copy = mat4.create();
+            Object.assign(copy, matrix);
+            trafos.push(copy);
+        }
+
+        function popTrafo() {
+            return trafos.pop();
+        }
+
+        function drawCS() {
+            const vertices = [
+                0, 0, 10,
+                0, 0, -10,
+                0, 10, 1,
+                0, -10, 1,
+                10, 0, 1,
+                -10, 0, 1
+            ];
+
+            // Indices for wire frame rendering
+            indices = [0, 1, 2, 3, 4, 5];
+
+            // Setting up the VBO
+            vertexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+            // Setting up the IBO
+            indexBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+            gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(program.aVertexPosition);
+
+            gl.vertexAttribPointer(program.aNormal, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(program.aNormal);
+
+            // Bind IBO
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+
+            // Draw to the scene using triangle primitives
+            gl.drawElements(gl.LINES, indices.length, gl.UNSIGNED_SHORT, 0);
+
+            // Clean
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        }
+
+
+        function drawSeg() {
+            pushTrafo(modelViewMatrix);
+
+            mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0.0, 0.5]);
+            mat4.scale(modelViewMatrix, modelViewMatrix, [0.15, 0.15, 0.5]);
+            syncTrafos();
+            sphere.draw();
+
+            modelViewMatrix = popTrafo();
+        }
+
+
+        // Entry point to our application
+        function init() {
+            // Retrieve the canvas
+            const canvas = utils.getCanvas('webgl-canvas');
+
+            // Set the canvas to the size of the screen
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // Retrieve a WebGL context
+            gl = utils.getGLContext(canvas);
+            // Set the clear color to be black, first opengl call here
+
+            // Call the functions in an appropriate order
+            initProgram();
+        }
+
+        // Call checkKey whenever a key is pressed
+        window.onkeydown = checkKey;
+
+        // Call init once the webpage has loaded
+        window.onload = init;
+    </script>
+</head>
+
+<body>
+
+    <canvas id="webgl-canvas">
+        Your browser does not support the HTML5 canvas element.
+    </canvas>
+
+</body>
+
+</html>

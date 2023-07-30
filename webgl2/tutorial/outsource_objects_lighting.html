@@ -1,0 +1,319 @@
+<html>
+
+<head>
+    <title>Tutorial for the course Computergrafik, part 1</title>
+    // This code is based on the examples in the book "Real-Time 3D Graphics with WebGL 2.0"
+    // from Farhad Ghayour and Diego Cantor, Packt Publishing, 2018
+    // Thomas Jung, 2023
+    <link rel="shortcut icon" type="image/png" href="../common/images/favicon.png" />
+
+    <!-- libraries -->
+    <link rel="stylesheet" href="../common/lib/normalize.css">
+
+    <!-- modules -->
+    <script type="text/javascript" src="../common/js/utils.js"></script>
+    <!-- Tutorial2 -->
+    <script type="text/javascript" src="../common/lib/gl-matrix.js"></script>
+    <script type="text/javascript" src="../common/js/EventEmitter.js"></script>
+    <script type="text/javascript" src="../common/js/Clock.js"></script>
+    <!-- added by Weijie -->
+    <script type="text/javascript" src="../common/js/Program.js"></script>
+    <!-- added by Weijie -->
+    <!-- Tutorial2 -->
+
+    <!-- Tutorial7 -->
+    <script type="text/javascript" src="cube.js"></script>
+    <script type="text/javascript" src="sphere.js"></script>
+
+    <!-- Tutorial7 -->
+
+    // Browser doesn´t know this MIME type
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        #version 300 es
+        precision mediump float;
+    
+        const int numLights = 2;
+    
+        uniform mat4 uModelViewMatrix;
+        uniform mat4 uProjectionMatrix;
+        // We need a normal matrix, which is the transposed inverted
+        uniform mat4 uNormalMatrix;
+        uniform vec3 uLightPosition[numLights];
+    
+        in vec3 aVertexPosition;
+        // new Tutorial 7: normal, not color
+        in vec3 aNormal;
+    
+        out vec3 vNormal;
+        out vec3 vLightRay[numLights];
+        out vec3 vEye[numLights];
+    
+        void main(void) {
+          vec4 vertex = uModelViewMatrix * vec4(aVertexPosition, 1.0);
+          vec4 lightPosition = vec4(0.0);
+    
+          // Set varyings for each individual light
+          for(int i= 0; i < numLights; i++) {
+            lightPosition = vec4(uLightPosition[i], 1.0);
+            vLightRay[i] = vertex.xyz - lightPosition.xyz;
+            vEye[i] = -vec3(vertex.xyz);
+          }
+    
+          vNormal = vec3(uNormalMatrix * vec4(aNormal, 1.0));
+          gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+        }
+      </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        #version 300 es
+        precision mediump float;
+    
+        const int numLights = 2;
+    
+        uniform vec3 uLd[numLights];
+        uniform vec3 uLs[numLights];
+        uniform vec3 uLightPosition[numLights];
+        uniform vec3 uKa;
+        uniform vec3 uKd;
+        uniform vec3 uKs;
+        uniform float uNs;
+    
+        // from rasterizer
+        in vec3 vNormal;
+        in vec3 vLightRay[numLights];
+        in vec3 vEye[numLights];
+    
+        // to frame buffer
+        out vec4 fragColor;
+    
+        void main(void) {
+          vec3 color = vec3(0.0);
+          vec3 light = vec3(0.0);
+          vec3 eye = vec3(0.0);
+          vec3 reflection = vec3(0.0);
+          vec3 normal = normalize(vNormal);
+
+          for (int i = 0; i < numLights; i++) {
+              eye = normalize(vEye[i]);
+              light = normalize(vLightRay[i]);
+              reflection = reflect(light, normal);
+              color += (uLd[i] * uKd * clamp(dot(normal, -light), 0.0, 1.0));
+              color += (uLs[i] * uKs * pow(max(dot(reflection, eye), 0.0), uNs) * 4.0);
+          }
+    
+          fragColor =  vec4(color, 1.0);
+        }
+      </script>
+
+    <script type="text/javascript">
+        // For example, prohibit assignment to undeclared variables 
+        'use strict';
+
+
+        // Global variables that are set and used
+        // across the application
+        let gl,
+            program,
+            vertexBuffer,
+            indexBuffer,
+            indices;
+
+        //Tutorial3
+        let colorBuffer;
+        //Tutorial3
+
+        // Tutorial7
+        let normalMatrix;
+        normalMatrix = mat4.create();
+        // Tutorial7
+        function addNormalMatrix() {
+            mat4.copy(normalMatrix, modelViewMatrix);
+            mat4.invert(normalMatrix, normalMatrix);
+            mat4.transpose(normalMatrix, normalMatrix);
+            gl.uniformMatrix4fv(program.uNormalMatrix, false, normalMatrix);
+        }
+
+        //Tutorial2
+        let clock, modelViewMatrix, projectionMatrix;
+
+        modelViewMatrix = mat4.create();
+        projectionMatrix = mat4.create();
+
+        // Create a program with the appropriate vertex and fragment shaders
+        function initProgram() {
+            // Configure `program` using
+            program = new Program(gl, 'vertex-shader', 'fragment-shader');
+
+            const attributes = [
+                'aVertexPosition',
+                //commented due to Tutorial7
+                //Tutorial3
+                // 'aColor',
+                //Tutorial3
+                //commented due to Tutorial7
+
+                //Tutorial7
+                'aNormal',
+                //Tutorial7
+            ];
+
+            const uniforms = [
+                //Tutorial7
+                'uLd',
+                'uLs',
+                'uLightPosition',
+                'uKa',
+                'uKd',
+                'uKs',
+                'uNs',
+                'uNormalMatrix',
+                //Tutorial7
+
+                'uProjectionMatrix',
+                'uModelViewMatrix',
+            ];
+
+            // Load attributes and uniforms into program
+            program.load(attributes, uniforms);
+
+            addNormalMatrix();
+            gl.uniform3fv(program.uLightPosition, [-5, 2, 2,   5, 2, 2]);
+            gl.uniform3fv(program.uLd, [1, 0.1, 0.1,   0.1, 1, 0.1]);
+            gl.uniform3fv(program.uLs, [0.5, 0.5, 0.5,   0.5, 0.5, 0.5]);
+            gl.uniform3fv(program.uKa, [0.1, 0.1, 0.1]);
+            gl.uniform3fv(program.uKd, [0.4, 0.4, 0.4]);
+            gl.uniform3fv(program.uKs, [0.4, 0.4, 0.4]);
+            gl.uniform1f(program.uNs, 10);
+        }
+        //Tutorial2
+
+        //Tutorial4
+        let angleX = 0, angleY = 0, angleZ = 0;
+        //Tutorial4
+
+        //Tutorial5
+        let cube;
+        //Tutorial5
+
+        //Tutorial6
+        let sphere;
+        //Tutorial6
+
+        // If key is pressed change background color
+        function checkKey(event) {
+            switch (event.keyCode) {
+                // number 1 => green
+                case 49: {
+                    gl.clearColor(0.2, 0.8, 0.2, 1.0);
+                    break;
+                }
+                // number 2 => blue
+                case 50: {
+                    gl.clearColor(0.2, 0.2, 0.8, 1.0);
+                    break;
+                }
+                // number 3 => random color
+                case 51: {
+                    gl.clearColor(Math.random(), Math.random(), Math.random(), 1.0);
+                    break;
+                }
+                //Tutorial4
+                case 88 /*"KeyX"*/: {
+                    angleX += 0.3;
+                    break;
+                }
+
+                case 89 /*"KeyY"*/: {
+                    angleY += 0.3;
+                    break;
+                }
+
+                case 90 /*"KeyZ"*/: {
+                    angleZ += 0.3;
+                    break;
+                }
+                //Tutorial4
+            }
+
+ //to Tutorial7 added by Weijie
+        //Tutorial2
+        mat4.perspective(projectionMatrix, 60.0 * Math.PI / 180, 4 / 3, 0.1, 100);
+        mat4.translate(projectionMatrix, projectionMatrix, [0, 0, -3.0]);
+        gl.uniformMatrix4fv(program.uProjectionMatrix, false, projectionMatrix);
+        mat4.rotate(modelViewMatrix, modelViewMatrix, 0.25 * Math.PI / 180, [0, 1, 0]);
+        gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+        //Tutorial2
+
+        // //  Euler angles
+        mat4.identity(modelViewMatrix); // start from begin in every frame
+        mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -3.0]); // now with modelview
+        mat4.rotate(modelViewMatrix, modelViewMatrix, angleX, [1, 0, 0]);
+        mat4.rotate(modelViewMatrix, modelViewMatrix, angleY, [0, 1, 0]);
+        mat4.rotate(modelViewMatrix, modelViewMatrix, angleZ, [0, 0, 1]);
+        //uncommented due to Tutorial6: otherwise the cube would be embedded in the sphere
+        //commented due to Tutorial5: with this there will be only one cube
+        gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+        //commented due to Tutorial5: with this there will be only one cube
+        //uncommented due to Tutorial6: otherwise the cube would be embedded in the sphere
+        //to Tutorial7 added by Weijie
+
+            //gl.clear() moved here, otherwise the canvas would be reset when we call cube.draw() the second time
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            gl.enable(gl.DEPTH_TEST);  
+
+            //gl.clear() moved here, otherwise the canvas would be reset when we call cube.draw() the second time
+
+            cube = new RGBCube();
+            mat4.translate(modelViewMatrix, modelViewMatrix, [-1.0, 0.0, 0.0]);
+            gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+            cube.draw();
+            //Tutorial5
+
+            //Tutorial6
+            sphere = new Sphere();
+            mat4.translate(modelViewMatrix, modelViewMatrix, [2.0, 0.0, 0.0]);
+            gl.uniformMatrix4fv(program.uModelViewMatrix, false, modelViewMatrix);
+            sphere.draw();
+            //Tutorial6
+        }
+
+
+        // Entry point to our application
+        function init() {
+            // Retrieve the canvas
+            const canvas = utils.getCanvas('webgl-canvas');
+
+            // Set the canvas to the size of the screen
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // Retrieve a WebGL context
+            gl = utils.getGLContext(canvas);
+            // Set the clear color to be black, first opengl call here
+
+            // Call the functions in an appropriate order
+            initProgram();
+            // initBuffers();
+            //commented due to Tutorial5
+            // draw();
+            //commented due to Tutorial5
+        }
+
+        // Call checkKey whenever a key is pressed
+        window.onkeydown = checkKey;
+
+        // Call init once the webpage has loaded
+        window.onload = init;
+    </script>
+</head>
+
+<body>
+
+    <canvas id="webgl-canvas">
+        Your browser does not support the HTML5 canvas element.
+    </canvas>
+
+</body>
+
+</html>
