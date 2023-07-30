@@ -7,3 +7,7 @@ This scene shows a solar system with various planets revolving around the sun. E
 
 ## web application with WebGL2
 
+![image](https://github.com/zhang-weijie/computer-graphic/assets/60659396/1f6c7ed5-c9bc-4192-83b0-7fee0ef25dd2)
+![image](https://github.com/zhang-weijie/computer-graphic/assets/60659396/4eec8af8-008c-4695-b66e-b1282cd6bfb2)
+
+This project includes several scenes created with WebGL2.
