@@ -1,7 +1,8 @@
 # computer-graphic
 ## web application with three.js
 
-![solarsystem](https://github.com/zhang-weijie/computer-graphic/assets/60659396/0e14c1e7-78aa-4261-bbd2-b7ffc3ab5a41)
+![solarsystem](https://github.com/zhang-weijie/computer-graphic/assets/60659396/025c2751-9b49-4b26-b455-539698a14716)
+
 
 
 This scene shows a solar system with various planets revolving around the sun. Each planet has its own orbit and axis of rotation. The tilt of the earth's axis with respect to its orbit around the sun causes the sun's rays to strike the earth's surface at different angles. This creates different seasons. Various visual effects such as texturing, lighting, and shadows are also used to create a realistic rendering. The user can pause the animation and change the speed. In addition, you can switch between different camera perspectives, including a perspective camera looking from Earth.
